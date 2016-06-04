@@ -1,0 +1,46 @@
+################################################################################
+#                                                                              #
+#  Dokumentace k projektu do pøedmìtu Biologií inspirované poèítaèe (BIN) 2014 #
+#                                                                              #
+#  Projekt: 07B - Implementace CA pomocí Python+MPI                            #
+#  Autor:   Radim KUBI©, xkubis03                                              #
+#                                                                              #
+################################################################################
+
+
+POTØEBNÝ SOFTWARE PRO SPU©TÌNÍ
+------------------------------
+
+Projekt vyu¾íval:
+    * Python 3.4.0
+    * NumPy 1.8.1
+    * MPI4Py 1.3.1
+
+Vý¹e uvedený software je nutné mít nainstalovaný nebo jej doinstalovat ruènì,
+popø. lze pou¾ívat jejich star¹í verze bez záruky funkènosti. Nejkritiètìj¹í je
+Python 3.4.0, který je mo¾né nahradit jinou 3.x verzí, ale je tøeba zamìnit
+první øádky *.py skriptù, kde je vy¾adován Python 3.4, nebo tyto skripty
+spou¹tìt z pøíkazové øádky specifikováním pou¾itého Pythonu:
+
+    python3 ./<skript>.py
+
+Na ¹kolním serveru merlin lze v¹echen vý¹e uvedený SW doinstalovat lokálnì
+do domovského adresáøe u¾ivatele pomocí pøilo¾eného skriptu install-merlin.sh
+
+
+SPOU©TÌNÍ JEDNOTLIVÝCH ÈÁSTÍ PROJEKTU
+-------------------------------------
+
+Zdrojové soubory neobsahují ¾ádný Makefile, proto¾e jsou ve¹keré programové
+skripty psány v Pythonu a v¹echny testovací skripty v Bash.
+
+Soubory s pøíponou *.py jsou skripty implementující výpoèty CA, ka¾dý z nich
+obsahuje nápovìdu se zpùsobem pou¾ití (výpis pøi chybì + v hlavièce).
+
+Sekvenèní výpoèet lze spou¹tìt samostatnì, paralelní výpoèty je tøeba spou¹tìt
+pomocí programu mpiexec.
+
+K testování jednotlivých implementovaných metod slou¾í skripty s pøíponou *.sh.
+Testování paralelních výpoètù pøedpokládá zadání poètu souèasnì paralelnì
+bì¾ící procesorù jako prvního argumentu *.sh skriptu. Pokud není poèet zadán,
+pou¾ije se hodnota defaultní. *.sh skripty obsahují popis v jejich hlavièce.

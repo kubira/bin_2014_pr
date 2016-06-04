@@ -1,0 +1,826 @@
+\documentclass{beamer}
+
+\usepackage[latin2]{inputenc}
+\usepackage[IL2]{fontenc}
+\usepackage[czech]{babel}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{hhline}
+
+\usetheme{Madrid}
+
+\title[Implementace CA pomocí Python+MPI]{07B -- Implementace CA pomocí Python+MPI}
+\subtitle{Biologií inspirované poèítaèe}
+\author[Radim Kubi¹]{Radim Kubi¹\\ \texttt{\tiny xkubis03@stud.fit.vutbr.cz}}
+\institute[VUT FIT v~Brnì]{Vysoké uèení technické v~Brnì\\Fakulta informaèních technologií}
+\date{\today}
+
+\begin{document}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}
+
+\titlepage
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Zadání projektu}
+
+\begin{enumerate}
+  \item Prostudovat mo¾nosti knihovny \emph{mpi4py}
+  \item Implementovat pomocí knihovny \emph{mpi4py} paralelní výpoèet
+  \item[]
+    \begin{itemize}
+      \item Conwayovy hry Life
+      \item Alespoò jednoho vícestatového CA
+    \end{itemize}
+  \item Provést sadu experimentù
+  \item[]
+    \begin{itemize}
+      \item Rùzná nastavení velikosti CA
+      \item Rùzné stupnì paralelizace výpoètu
+    \end{itemize}
+  \item Zhodnotit urychlení vùèi sekvenènímu výpoètu v~Pythonu
+  \item Posoudit
+  \item[]
+    \begin{itemize}
+      \item Výhody
+      \item Nevýhody
+      \item Pou¾itelnost
+    \end{itemize}
+\end{enumerate}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Software a hardware}
+
+\textbf{Pou¾itý software a~knihovny}
+\begin{itemize}
+  \item Python 3.4.0 \small{(\url{http://www.python.org/})}
+  \item NumPy 1.8.1 \small{(\url{http://www.numpy.org/})}
+  \item MPI4Py 1.3.1 \small{(\url{http://mpi4py.scipy.org/})}
+\end{itemize}
+
+\vskip15pt
+
+\textbf{Testovací sestava}
+\begin{itemize}
+  \item 2$\times$ Intel\textregistered\ Xeon\textregistered\ E5430
+    \begin{itemize}
+      \item Poèet jader: 4 (8 celkem)
+      \item Frekvence: 2,66\,GHz
+    \end{itemize}
+  \item 16\,GB DDR3 1333\,MHz
+  \item Fedora 18 (Spherical Cow, 64\,bitù)
+\end{itemize}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Implementované CA}
+
+\begin{figure}[htbp]
+  \begin{minipage}[l]{189pt}
+    \textbf{Conwayova hra Life}
+    \begin{itemize}
+      \item 2 stavy, 4 pravidla, Moorovo okolí
+    \end{itemize}
+  \end{minipage}
+  \begin{minipage}[c]{73pt}
+    \centering
+    \includegraphics[scale=0.175]{img/moore.eps}
+    \\
+    \tiny{Moorovo okolí}
+  \end{minipage}
+  \begin{minipage}[c]{73pt}
+    \centering
+    \includegraphics[scale=0.175]{img/vonNeumann.eps}
+    \\
+    \tiny{von Neumannovo okolí}
+  \end{minipage}
+\end{figure}
+
+\textbf{Langtonova smyèka}
+\begin{itemize}
+  \item 8 stavù, 219 pravidel (+ rotace), von Neumannovo okolí
+\end{itemize}
+
+\textbf{Bylova smyèka}
+\begin{itemize}
+  \item 6 stavù, 145 pravidel (+ rotace), von Neumannovo okolí
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+  \begin{minipage}[c]{92pt}
+  \centering
+  \includegraphics[scale=0.2]{img/conwayLife.eps}
+  \end{minipage}
+  \begin{minipage}[c]{124pt}
+  \centering
+  \includegraphics[scale=0.2]{img/langtonLoop.eps}
+  \end{minipage}
+  \begin{minipage}[c]{89pt}
+  \centering
+  \includegraphics[scale=0.2]{img/bylLoop.eps}
+  \end{minipage}
+  \\
+  \begin{minipage}[c]{92pt}
+  \centering
+  Conwayova hra Life
+  \end{minipage}
+  \begin{minipage}[c]{124pt}
+  \centering
+  Langtonova smyèka
+  \end{minipage}
+  \begin{minipage}[c]{89pt}
+  \centering
+  Bylova smyèka
+  \end{minipage}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Metody výpoètu nových stavù}
+
+\textbf{O¹etøení hranic plochy CA}
+\begin{itemize}
+  \item Conwayova hra Life: propojení hranic
+  \item Langtonova a Bylova smyèka: statický stav
+\end{itemize}
+
+\vskip15pt
+
+\textbf{Zpùsoby rozdìlení plochy mezi procesory}
+\begin{itemize}
+  \item Sekvenèní zpracování
+  \item Zpracování po jedné buòce
+  \item Zpracování po jednom øádku
+  \item Zpracování po bloku rozptýlených øádkù
+  \item Zpracování po souvislých blocích øádkù
+\end{itemize}
+
+\vskip15pt
+
+\textbf{Paralelní zpracování vyu¾ívá v¾dy 1 procesor jako øídící a~ostatní
+procesory jako výpoèetní.}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Sekvenèní zpracování}
+
+\begin{figure}[htbp]
+\centering
+  \begin{minipage}[c]{134pt}
+    \textbf{Algoritmus výpoètu}\\
+    {\scriptsize \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \scriptsize
+      \item[] \textbf{for} i=0 \textbf{to} N-1:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] \textbf{for} j=0 \textbf{to} N-1:
+        \item[]
+        \begin{itemize}
+          \setlength{\itemindent}{-2.5em}
+          \scriptsize
+          \item[] CA2[i, j] = newVal(i, j)
+        \end{itemize}
+      \end{itemize}
+      \item[] CA1, CA2 = CA2, CA1
+    \end{itemize}
+  \end{minipage}
+  \begin{minipage}[c]{204pt}
+    \centering
+    \includegraphics[scale=0.3]{img/sequence.eps}
+    \\
+    Sekvenèní zpracování
+  \end{minipage}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Zpracování po jedné buòce}
+
+\begin{figure}[htbp]
+\centering
+  \begin{minipage}[c]{134pt}
+    \textbf{Algoritmus øízení}\\
+    {\scriptsize \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1.2em}
+      \scriptsize
+      \item[] broadcastSend(CA1)
+      \item[] \textbf{for} i=0 \textbf{to} (N$\cdot$N)-1:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1.2em}
+        \scriptsize
+        \item[] CA2[i/N][i\%N] = recv(newCell)
+      \end{itemize}
+      \item[] CA1, CA2 = CA2, CA1
+    \end{itemize}
+    \vskip10pt
+    \textbf{Algoritmus výpoètu}\\
+    {\scriptsize \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \scriptsize
+      \item[] myCA = broadcastReceive(CA1)
+      \item[] i = rank-1
+      \item[] \textbf{while} i $<$ (N$\cdot$N):
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[]
+        \begin{itemize}
+          \setlength{\itemindent}{-2.5em}
+          \scriptsize
+          \item[] newCell = newVal(i/N, i\%N)
+        \end{itemize}
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] send(newCell)
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] i += shift
+      \end{itemize}
+    \end{itemize}
+  \end{minipage}
+  \begin{minipage}[c]{204pt}
+    \centering
+    \includegraphics[scale=0.3]{img/parallelCell.eps}
+    \\
+    Zpracování po jedné buòce
+  \end{minipage}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Zpracování po jednom øádku}
+
+\begin{figure}[htbp]
+\centering
+  \begin{minipage}[c]{134pt}
+    \textbf{Algoritmus øízení}\\
+    {\scriptsize \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \scriptsize
+      \item[] broadcastSend(CA1)
+      \item[] \textbf{for} i=0 \textbf{to} N-1:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] CA2[i] = receive(newRow)
+      \end{itemize}
+      \item[] CA1, CA2 = CA2, CA1
+    \end{itemize}
+    \vskip10pt
+    \textbf{Algoritmus výpoètu}\\
+    {\scriptsize \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \scriptsize
+      \item[] myCA = broadcastReceive(CA1)
+      \item[] i = rank-1
+      \item[] \textbf{while} i $<$ N:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] newRow = []
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] \textbf{for} j=0 \textbf{to} N-1:
+        \item[]
+        \begin{itemize}
+          \setlength{\itemindent}{-2.5em}
+          \scriptsize
+          \item[] newRow.add(newVal(i, j))
+        \end{itemize}
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] send(newRow)
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \scriptsize
+        \item[] i += shift
+      \end{itemize}
+    \end{itemize}
+  \end{minipage}
+  \begin{minipage}[c]{204pt}
+    \centering
+    \includegraphics[scale=0.3]{img/parallelOneRow.eps}
+    \\
+    Zpracování po jednom øádku
+  \end{minipage}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Zpracování po bloku rozptýlených øádkù}
+
+\begin{figure}[htbp]
+\centering
+  \begin{minipage}[c]{112pt}
+    \textbf{Algoritmus øízení}\\
+    {\tiny \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \tiny
+      \item[] broadcastSend(CA1)
+      \item[] \textbf{for} p=1 \textbf{to} numberOfProcs:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] CA3 = receive(myCA2)
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] i = p-1
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] \textbf{while} i $<$ N:
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{0em}
+        \tiny
+        \item[] CA2[i] = CA3[i]
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{0em}
+        \tiny
+        \item[] i += shift
+      \end{itemize}
+      \item[] CA1, CA2 = CA2, CA1
+    \end{itemize}
+    \textbf{Algoritmus výpoètu}\\
+    {\tiny \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \tiny
+      \item[] myCA1 = broadcastReceive(CA1)
+      \item[] i = rank-1
+      \item[] \textbf{while} i $<$ N:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] \textbf{for} j=0 \textbf{to} N-1:
+        \item[] myCA2[i, j] = newVal(i, j)
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] i += shift
+      \end{itemize}
+      \item[] send(myCA2)
+    \end{itemize}
+  \end{minipage}
+  \begin{minipage}[c]{226pt}
+    \centering
+    \includegraphics[scale=0.175]{img/parallelBlockRow.eps}
+    \\
+    Zpracování po bloku rozptýlených øádkù
+  \end{minipage}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Zpracování po souvislých blocích øádkù}
+
+\begin{figure}[htbp]
+\centering
+  \begin{minipage}[c]{112pt}
+    \textbf{Algoritmus øízení}\\
+    {\tiny \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1.5em}
+      \tiny
+      \item[] broadcastSend(CA1)
+      \item[] \textbf{for} p=1 \textbf{to} nOfProcs:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1.5em}
+        \tiny
+        \item[] iFr = (p-1)$\cdot$(N/(nOfProcs-1))
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1.5em}
+        \tiny
+        \item[] iTo = p$\cdot$(N/(nOfProcs-1))
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1.5em}
+        \tiny
+        \item[] CA2[iFr:iTo] = recv(myCA2[iFr:iTo])
+      \end{itemize}
+      \item[] CA1, CA2 = CA2, CA1
+    \end{itemize}
+    \vskip10pt
+    \textbf{Algoritmus výpoètu}\\
+    {\tiny \textbf{for} s=1 \textbf{to} STEPS:}
+    \begin{itemize}
+      \setlength{\itemindent}{-1em}
+      \tiny
+      \item[] myCA1 = broadcastReceive(CA1)
+      \item[] i = iFr
+      \item[] \textbf{while} i $<$ iTo:
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] \textbf{for} j=0 \textbf{to} N-1:
+        \item[] myCA2[i, j] = newVal(i, j)
+      \end{itemize}
+      \item[]
+      \begin{itemize}
+        \setlength{\itemindent}{-1em}
+        \tiny
+        \item[] i += 1
+      \end{itemize}
+      \item[] send(myCA2[iFr:iTo])
+    \end{itemize}
+  \end{minipage}
+  \begin{minipage}[c]{226pt}
+    \centering
+    \includegraphics[scale=0.175]{img/parallelBlockRowCoherent.eps}
+    \\
+    Zpracování po souvislých blocích øádkù
+  \end{minipage}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Testované rozmìry a~stupnì paralelizace}
+
+\textbf{Conwayova hra Life}
+\begin{itemize}
+  \item 10$\times$10, 20$\times$20, \dots, 500$\times$500 bunìk (krok 10)
+\end{itemize}
+
+\textbf{Langtonova a Bylova smyèka}
+\begin{itemize}
+  \item 35$\times$35, 50$\times$50, \dots, 500$\times$500 bunìk (krok 15)
+\end{itemize}
+
+\vskip15pt
+
+\textbf{Sekvenèní zpracování}
+\begin{itemize}
+  \item Bìh pouze na jednom jádøe jednoho z procesorù
+\end{itemize}
+
+\textbf{Paralelní zpracování}
+\begin{itemize}
+  \item 6, 8, 10, (12 a 14) paralelních procesù (MPI procesorù)
+  \item K dispozici pouze 8 fyzických jader
+\end{itemize}
+
+\vskip15pt
+
+\textbf{Paralelní zpracování vyu¾ívá v¾dy 1 procesor jako øídící a~ostatní
+procesory jako výpoèetní.}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Zpùsob testování}
+
+\textbf{Poèet testù}
+\begin{itemize}
+  \item Ka¾dá kombinace parametrù spu¹tìna 10krát
+\end{itemize}
+\centerline{[typ CA]$\times$[rozmìr]$\times$[metoda výpoètu]$\times$[stupeò paralelizace]}
+\begin{itemize}
+  \item V ka¾dém bìhu proveden 100krát výpoèet nových stavù celého CA
+\end{itemize}
+
+\vskip10pt
+
+\textbf{Mìøení délky trvání testu}
+\begin{itemize}
+  \item Èas mìøen pouze v~øídícím procesu/procesoru
+  \item Mìøení pomocí \texttt{time.process\_time()} (sekvenèní),\\
+  \texttt{time.time()} (paralelní) a~výpoèet rozdílu dvou èasù
+  \item Délka bìhu \textbf{nezahrnuje} inicializaci pole CA, pouze èas
+  výpoètu
+\end{itemize}
+
+\vskip10pt
+
+\textbf{Výsledný èas jednoho testu je vypoèten jako aritmetický prùmìr v¹ech
+10 èasù zmìøených pro jednu kombinaci.}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Hra Life}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/lifeCell.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Hra Life}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/lifeOneRow.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Hra Life}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/lifeBlockRow.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Hra Life}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/lifeBlockRowCoh.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Hra Life}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/lifeBest.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Langtonova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/langtonCell.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Langtonova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/langtonOneRow.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Langtonova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/langtonBlockRow.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Langtonova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/langtonBlockRowCoh.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Langtonova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/langtonBest.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Bylova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/bylCell.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Bylova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/bylOneRow.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Bylova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/bylBlockRow.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Bylova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/bylBlockRowCoh.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Bylova smyèka}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/bylBest.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Urychlení výpoètu}
+
+\centerline{\bf Porovnání èasù sekvenèního zpracování}
+\centerline{\bf a~paralelního výpoètu nejrychlej¹í metodou}
+\centerline{\bf vybraných rozmìrù CA}
+
+\begin{table}[H]
+\catcode`\-=12
+\centering
+\tiny
+\begin{tabular}{|c|r@{,}l|r@{,}l|r@{,}l|r@{,}l|r@{,}l|r@{,}l|}
+\hline
+{\multirow{3}{*}{\bf Rozmìr CA}} & \multicolumn{4}{|c|}{\bf Conwayova hra Life} & \multicolumn{4}{|c|}{\bf Langtonova smyèka} & \multicolumn{4}{|c|}{\bf Bylova smyèka} \\
+\cline{2-13}
+ & \multicolumn{2}{|c|}{\bf Sekvenèní} & \multicolumn{2}{|c|}{\bf Nejrychlej¹í} & \multicolumn{2}{|c|}{\bf Sekvenèní} & \multicolumn{2}{|c|}{\bf Nejrychlej¹í} & \multicolumn{2}{|c|}{\bf Sekvenèní} & \multicolumn{2}{|c|}{\bf Nejrychlej¹í} \\
+ & \multicolumn{2}{|c|}{\bf zpracování} & \multicolumn{2}{|c|}{\bf metoda} & \multicolumn{2}{|c|}{\bf zpracování} & \multicolumn{2}{|c|}{\bf metoda} & \multicolumn{2}{|c|}{\bf zpracování} & \multicolumn{2}{|c|}{\bf metoda} \\
+\hline
+50 & 7&146 & 1&214 & 6&597 & 1&100 & 6&948 & 1&239 \\
+\hline
+100/95 & 28&442 & 4&403 & 24&538 & 3&869 & 25&553 & 3&962 \\
+\hline
+150/155 & 64&708 & 9&605 & 65&988 & 10&014 & 67&843 & 10&347 \\
+\hline
+200 & 114&744 & 16&838 & 112&517 & 16&652 & 113&852 & 16&919 \\
+\hline
+250/245 & 177&173 & 26&059 & 167&268 & 24&706 & 168&442 & 25&153 \\
+\hline
+300/305 & 257&556 & 37&680 & 262&234 & 38&262 & 260&326 & 39&137 \\
+\hline
+350 & 348&958 & 51&086 & 345&886 & 50&888 & 347&596 & 51&297 \\
+\hline
+400/395 & 461&903 & 67&083 & 439&837 & 64&549 & 437&860 & 65&765 \\
+\hline
+450/455 & 588&048 & 84&857 & 590&735 & 85&324 & 581&944 & 86&603 \\
+\hline
+500 & 721&227 & 104&498 & 714&156 & 103&784 & 703&930 & 106&915 \\
+\hline
+\end{tabular}
+\label{tabulkadi}
+\end{table}
+
+\centerline{\scriptsize Tabulka èasù výpoètù pro vybrané rozmìry CA -- v~sekundách,}
+\centerline{\scriptsize hra Life/Langtonova a Bylova smyèka.}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Výsledky -- Urychlení výpoètu}
+\vspace{-25pt}
+\begin{figure}[h]
+\centering
+\includegraphics[scale=0.5]{img/accelerationAll.eps}
+\end{figure}
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\begin{frame}{Závìr}
+
+Paralelním výpoètem nových stavù CA pomocí knihovny \emph{mpi4py} dosáhneme
+cca \textbf{85\%} zrychlení oproti sekvenènímu zpracování, co¾ je vynikající
+výsledek.
+
+\vskip15pt
+
+\textbf{Výhody:}
+\begin{itemize}
+  \item[+] rychlá implementace v~Pythonu,
+  \item[+] velké urychlení výpoètu.
+\end{itemize}
+
+\vskip10pt
+
+\textbf{Nevýhody:}
+\begin{itemize}
+  \item[-] nárùst vyu¾itého pamì»ového prostoru,
+  \item[-] ?
+\end{itemize}
+
+\vskip15pt
+
+Knihovna \emph{mpi4py} je \underline{pou¾itelná} pro implementaci paralelních
+výpoètù nových stavù CA a~lze ji pro tento úèel rozhodnì \underline{doporuèit}.
+
+\end{frame}
+
+%-------------------------------------------------------------------------------
+
+\end{document}
